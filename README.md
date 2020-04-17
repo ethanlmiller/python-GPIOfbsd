@@ -86,9 +86,9 @@ Arguments to the `gpio_` functions are the same as listed on [`gpio(3)`](https:/
 without the handle, which is supplied by the controller object. The following functions take different arguments
 in the controller version:
 
-*  `gpio_pin_list`: takes no arguments, returns a list of `GpioConfig` `namedtuple`s
-*  `gpio_pin_config`: takes the pin name/number as an argument, returns a single `GpioConfig` `namedtuple`
-*  `gpio_pin_set_flags`: takes the pin name/number and the flags to which the pin is to be set
+*  `pin_list`: takes no arguments, returns a list of `GpioConfig` `namedtuple`s
+*  `pin_config`: takes the pin name/number as an argument, returns a single `GpioConfig` `namedtuple`
+*  `pin_set_flags`: takes the pin name/number and the flags to which the pin is to be set
 
 The controller automatically closes the GPIO device when it's deleted (or goes out of scope). The `close` method
 is available if desired, but there's no need for the user to call it.

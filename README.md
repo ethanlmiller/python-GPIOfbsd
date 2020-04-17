@@ -67,13 +67,13 @@ The value passed to `GpioController` can be either the GPIO device number, or th
 
 Now, you can use `controller` to read and write information about the GPIO device. For example:
 
-`
+```
     pins = controller.pin_list ()        # Returns a list of GpioConfig descriptions of all of the pins
     pin8 = controller.pin_config (8)     # Returns the GpioConfig for pin 8
     pin7 = controller.pin_config ('pin 7') # All pin-based functions take either the pin number or pin name
     controller.pin_set (8, 1)            # Set pin 8 to output value 1
     controller.pin_get (8)               # Get the current value of pin 8
-`
+```
 
 The rules that apply to GPIO devices still apply here. For example, if pin 4 is an input pin, setting its value
 has no effect, and won't cause an error because `libgpio` doesn't return an error.

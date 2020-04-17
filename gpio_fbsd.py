@@ -194,7 +194,8 @@ class GpioController:
         newly-retrieved values.
         '''
         pconf_raw = GpioConfigRaw (pin=self.pin_num(pin))
-        v = gpiolib.gpio_pin_config (self.handle, pointer(pconf_raw))
+        if gpiolib.gpio_pin_config (self.handle, pointer(pconf_raw)) < 0:
+            raise GpioExecutionError ("gio_pin_config (pin={0}) failed".format (self.pin_num (pin)))
         pconf = pconf_raw.get ()
         self.update_config (pconf)
         return pconf
@@ -206,7 +207,8 @@ class GpioController:
         if name in self.names:
             raise GpioExecutionError ("pin name '{0}' already exists (pin {1})".format (name, self.names[name]))
         pn = self.pin_num (pin)
-        v = gpiolib.gpio_pin_set_name (self.handle, pn, c_char_p (bytes(name, "UTF-8")))
+        if gpiolib.gpio_pin_set_name (self.handle, pn, c_char_p (bytes(name, "UTF-8"))) < 0:
+            raise GpioExecutionError ("gpio_pin_set_name (pin={0}, name='{1}') failed".format (pn, name))
         # Delete old name
         del self.names[self.pins[pn].name]
         # Add new name as alias
@@ -221,12 +223,130 @@ class GpioController:
         '''
         pn = self.pin_num (pin)
         pconf_raw = GpioConfigRaw (pin=pn, flags=flags)
-        v = gpiolib.gpio_pin_set_flags (self.handle, byref(pconf_raw))
+        if gpiolib.gpio_pin_set_flags (self.handle, byref(pconf_raw)) < 0:
+            raise GpioExecutionError ("gpio_pin_set_flags (pin={0}, flags=0x{1:08x}) failed".format (pn, flags))
         self.pins[pn] = self.pins[pn]._replace (flags=flags)
         return v
 
     def close (self):
         gpiolib.close (self.handle)
+
+    # Functions below this point are helper functions.
+    # We provide access to them because it's simple, and because users may prefer
+    # to use them.
+
+    def pin_low (self, pin):
+        '''
+        Set the state of this pin to low.
+        '''
+        return gpiolib.gpio_set_pin_low (g.handle, self.pin_num (pin))
+
+    def pin_high (self, pin):
+        '''
+        Set the state of this pin to high.
+        '''
+        return gpiolib.gpio_set_pin_high (g.handle, self.pin_num (pin))
+
+    def pin_input (self, pin):
+        '''
+        Configure this pin to be an input pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_input (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_output (self, pin):
+        '''
+        Configure this pin to be an output pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_output (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_opendrain (self, pin):
+        '''
+        Configure this pin to be an open drain pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_opendrain (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_pushpull (self, pin):
+        '''
+        Configure this pin to be a push-pull pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_pushpull (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_tristate (self, pin):
+        '''
+        Configure this pin to be a tristate pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_tristate (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_pullup (self, pin):
+        '''
+        Configure this pin to be a pullup pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_pullup (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_pulldown (self, pin):
+        '''
+        Configure this pin to be an pulldown pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_pulldown (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_invin (self, pin):
+        '''
+        Configure this pin to be an inverted input pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_invin (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_invout (self, pin):
+        '''
+        Configure this pin to be an inverted output pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_invout (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
+    def pin_pulsate (self, pin):
+        '''
+        Configure this pin to be a pulsate pin. Since this changes the
+        configuration, also call pin_config to update internal configuration.
+        '''
+        pn = self.pin_num (pin)
+        ret = gpiolib.gpio_pin_pulsate (g.handle, pn)
+        self.pin_config (pn)
+        return ret
+
 
 if __name__ == '__main__':
     pass

@@ -1,3 +1,5 @@
+# Overview
+
 `python-GPIOfbsd` is a Python module that allows users to access the GPIO pins
 on a Raspberry Pi through the `libgpio` library on FreeBSD 12. Unlike some
 other modules, `python-GPIOfbsd` requires _no_ C compilation of any kind.
@@ -50,9 +52,50 @@ Import the module as you usually would with any Python module:
 `
 
 The module defines a lot of GPIO constants (taken from `/usr/include/sys/gpio.h`), all of
-which start with `GPIO_`. Beyond that, 
+which start with `GPIO_`. Classes all start with Gpio.
 
-But look at the [man page for `gpio(3)`](https://www.freebsd.org/cgi/man.cgi?gpio)
+## Using the module
+
+First, create a controller instance:
+
+`
+    controller = GpioController (0)
+`
+
+The value passed to `GpioController` can be either the GPIO device number, or the actual name of the device
+(on my system, it's `/dev/gpioc0`). If the GPIO controller can't be opened, an exception is thrown.
+
+Now, you can use `controller` to read and write information about the GPIO device. For example:
+
+`
+    pins = controller.pin_list ()        # Returns a list of GpioConfig descriptions of all of the pins
+    pin8 = controller.pin_config (8)     # Returns the GpioConfig for pin 8
+    pin7 = controller.pin_config ('pin 7') # All pin-based functions take either the pin number or pin name
+    controller.pin_set (8, 1)            # Set pin 8 to output value 1
+    controller.pin_get (8)               # Get the current value of pin 8
+`
+
+The rules that apply to GPIO devices still apply here. For example, if pin 4 is an input pin, setting its value
+has no effect, and won't cause an error because `libgpio` doesn't return an error.
+
+`GPIOfbsd` supports all of the functions described in [`gpio(3)`](https://www.freebsd.org/cgi/man.cgi?gpio),
+without the leading `gpio_` prefix. All pin-based functions take either a pin number or a pin name, and throw
+a `GpioValueException` if the pin doesn't exist.
+
+Arguments to the `gpio_` functions are the same as listed on [`gpio(3)`](https://www.freebsd.org/cgi/man.cgi?gpio),
+without the handle, which is supplied by the controller object. The following functions take different arguments
+in the controller version:
+
+*  `gpio_pin_list`: takes no arguments, returns a list of `GpioConfig` `namedtuple`s
+*  `gpio_pin_config`: takes the pin name/number as an argument, returns a single `GpioConfig` `namedtuple`
+*  `gpio_pin_set_flags`: takes the pin name/number and the flags to which the pin is to be set
+
+The controller automatically closes the GPIO device when it's deleted (or goes out of scope). The `close` method
+is available if desired, but there's no need for the user to call it.
+
+## Further information on GPIO
+
+Look at the [man page for `gpio(3)`](https://www.freebsd.org/cgi/man.cgi?gpio)
 on FreeBSD for a description of what the `gpio_XXX` calls do. This module
 implements all of them.
 

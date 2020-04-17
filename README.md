@@ -79,12 +79,13 @@ The rules that apply to GPIO devices still apply here. For example, if pin 4 is 
 has no effect, and won't cause an error because `libgpio` doesn't return an error.
 
 `GPIOfbsd` supports all of the functions described in [`gpio(3)`](https://www.freebsd.org/cgi/man.cgi?gpio),
-without the leading `gpio_` prefix. All pin-based functions take either a pin number or a pin name, and throw
+without the leading `gpio_` prefix.
+Arguments to the `gpio_` functions are the same as listed on [`gpio(3)`](https://www.freebsd.org/cgi/man.cgi?gpio),
+without the handle, which is supplied by the controller object. 
+All pin-based functions take either a pin number or a pin name, and throw
 a `GpioValueException` if the pin doesn't exist.
 
-Arguments to the `gpio_` functions are the same as listed on [`gpio(3)`](https://www.freebsd.org/cgi/man.cgi?gpio),
-without the handle, which is supplied by the controller object. The following functions take different arguments
-in the controller version:
+The following functions take different arguments in the `GPIOfbsd` version:
 
 *  `pin_list`: takes no arguments, returns a list of `GpioConfig` `namedtuple`s
 *  `pin_config`: takes the pin name/number as an argument, returns a single `GpioConfig` `namedtuple`

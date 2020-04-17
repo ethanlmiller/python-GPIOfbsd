@@ -7,7 +7,7 @@
 # It simply wraps libgpio.
 
 import ctypes
-from ctypes import CDLL,Structure,byref,c_uint32,c_char
+from ctypes import CDLL,Structure,byref,pointer,c_uint32,c_char,c_char_p
 from collections import namedtuple
 
 #
@@ -110,7 +110,7 @@ class GpioController:
         if type(device) == int:
             self.handle = gpiolib.gpio_open (device)
         elif type(device) == str:
-            self.handle = gpiolib.gpio_open_device (ctypes.c_char_p (bytes(device, "UTF-8")))
+            self.handle = gpiolib.gpio_open_device (c_char_p (bytes(device, "UTF-8")))
         if self.handle < 0:
             raise GpioExecutionError ("couldn't open GPIO controller {0}".format (device))
 
@@ -128,7 +128,8 @@ class GpioController:
         self.names = dict()
         for i in range (self.max_pin + 1):
             pin_config = self.pin_array_raw[i].get ()
-            self.pins.append ((pin_config.pin, pin_config.name, pin_config.caps, pin_config.flags))
+            self.pins.append (GpioConfig(pin=pin_config.pin, name=pin_config.name,
+                                         caps=pin_config.caps, flags=pin_config.flags))
             self.names[pin_config.name] = i
 
     def pin_num (self, pin):
@@ -193,7 +194,7 @@ class GpioController:
         newly-retrieved values.
         '''
         pconf_raw = GpioConfigRaw (pin=self.pin_num(pin))
-        v = gpiolib.gpio_pin_config (self.handle, byref(pconf_raw))
+        v = gpiolib.gpio_pin_config (self.handle, pointer(pconf_raw))
         pconf = pconf_raw.get ()
         self.update_config (pconf)
         return pconf
@@ -202,13 +203,27 @@ class GpioController:
         '''
         Set the name for the pin whose ID or (current) name is passed.
         '''
-        pass
+        if name in self.names:
+            raise GpioExecutionError ("pin name '{0}' already exists (pin {1})".format (name, self.names[name]))
+        pn = self.pin_num (pin)
+        v = gpiolib.gpio_pin_set_name (self.handle, pn, c_char_p (bytes(name, "UTF-8")))
+        # Delete old name
+        del self.names[self.pins[pn].name]
+        # Add new name as alias
+        self.names[name] = pn
+        # Update config
+        self.pins[pn] = self.pins[pn]._replace (name=name)
+        return v
 
     def pin_set_flags (self, pin, flags):
         '''
         Set the flags for the pin whose ID or name is passed.
         '''
-        pass
+        pn = self.pin_num (pin)
+        pconf_raw = GpioConfigRaw (pin=pn, flags=flags)
+        v = gpiolib.gpio_pin_set_flags (self.handle, byref(pconf_raw))
+        self.pins[pn] = self.pins[pn]._replace (flags=flags)
+        return v
 
     def close (self):
         gpiolib.close (self.handle)

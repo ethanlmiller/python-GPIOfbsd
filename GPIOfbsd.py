@@ -3,8 +3,44 @@
 #
 # Wrapper around libgpio for FreeBSD.
 #
+#
 # This library uses ctypes() and its ability to load .so libraries on FreeBSD.
 # It simply wraps libgpio.
+#
+# Unlike some other FreeBSD GPIO libraries, this library requires *no* C code
+# compliation.
+#
+#############################################################################
+#
+# BSD 3-Clause License
+#
+# Copyright (c) 2020, Ethan L. Miller
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import ctypes
 from ctypes import CDLL,Structure,byref,pointer,c_uint32,c_char,c_char_p
@@ -104,6 +140,14 @@ GpioConfigPtr = ctypes.POINTER(GpioConfigRaw)
 gpiolib = CDLL("libgpio.so")
 
 class GpioController:
+    """
+    The main class for GPIOfbsd, through which operations are done.
+    The constructor for this class is either:
+    GpioController (n): n is the GPIO controller number
+    GpioController (device): device is the path to the GPIO controller.
+
+    If the controller can't be successfully opened, a GpioExecutionError exception is raised.
+    """
     def __init__ (self, device):
         self.device = device
         self.handle = -1
@@ -132,7 +176,25 @@ class GpioController:
                                          caps=pin_config.caps, flags=pin_config.flags))
             self.names[pin_config.name] = i
 
-    def pin_num (self, pin):
+    def __del__ (self):
+        # When we go out of scope, close the GPIO device
+        self.close ()
+
+    def close (self):
+        """
+        Close the GPIO device associated with this controller.
+        Once this is done, the controller can't be used any more.
+        This is done automatically when the GpioController object is
+        garbage collected, so there's typically no need to call
+        this explicitly.
+        """
+        if self.handle >= 0:
+            gpiolib.close (self.handle)
+        self.handle = -1
+        self.pins = list()
+        self.names = dict()
+
+    def _pin_num (self, pin):
         if type(pin) == int:
             if 0 <= pin <= self.max_pin:
                 return pin
@@ -143,13 +205,7 @@ class GpioController:
         except:
             raise GpioPinNotFoundError (pin, self.max_pin)
 
-    def update_config (self, pin_config):
-        try:
-            del self.names[pins[pin_config.pin]]
-        except:
-            pass
-        self.names[pin_config.name] = pin_config.pin
-        self.pins[pin_config.pin] = pin_config
+
 
     def update_config_all (self):
         '''
@@ -165,18 +221,28 @@ class GpioController:
 
 
     def pin_get (self, pin):
-        v = gpiolib.gpio_pin_get (self.handle, self.pin_num (pin))
-        return v
+        """
+        Return the value associated with a given pin.
+        The pin may be specified by number or name.
+        """
+        return gpiolib.gpio_pin_get (self.handle, self._pin_num (pin))
 
     def pin_set (self, pin, value):
+        """
+        Set the value associated with a given pin.
+        The pin may be specified by number or name.
+        The value must be either 0 (GPIO_PIN_LOW) or 1 (GPIO_PIN_HIGH).
+        """
         if value != 0 and value != 1:
-            pass
-        v = gpiolib.gpio_pin_set (self.handle, self.pin_num (pin), value)
-        return v
+            raise GpioValueError (value)
+        return gpiolib.gpio_pin_set (self.handle, self._pin_num (pin), value)
 
     def pin_toggle (self, pin):
-        v = gpiolib.gpio_pin_toggle (self.handle, self.pin_num (pin))
-        return v
+        """
+        Toggle the value associated with a given pin.
+        The pin may be specified by number or name.       
+        """
+        return gpiolib.gpio_pin_toggle (self.handle, self._pin_num (pin))
 
     def pin_list (self):
         '''
@@ -190,14 +256,17 @@ class GpioController:
         '''
         Retrieve the pin configuration for the pin whose ID or name is passed.
         Return value is a GpioConfig namedtuple: (pin, name, caps, flags)
-        Also, update the pins and names arrays if needed to reflect the
-        newly-retrieved values.
         '''
-        pconf_raw = GpioConfigRaw (pin=self.pin_num(pin))
+        pn = self._pin_num (pin)
+        pconf_raw = GpioConfigRaw (pin=pn)
         if gpiolib.gpio_pin_config (self.handle, pointer(pconf_raw)) < 0:
-            raise GpioExecutionError ("gio_pin_config (pin={0}) failed".format (self.pin_num (pin)))
+            raise GpioExecutionError ("gio_pin_config (pin={0}) failed".format (pn))
+        # Update the internal GpioController configuration to reflect the (potentially) new config
         pconf = pconf_raw.get ()
-        self.update_config (pconf)
+        # Delete the old name associated with this pin
+        del self.names[self.pins[pn].name]
+        self.names[pconf.name] = pn
+        self.pins[pn] = pconf
         return pconf
 
     def pin_set_name (self, pin, name):
@@ -206,7 +275,7 @@ class GpioController:
         '''
         if name in self.names:
             raise GpioExecutionError ("pin name '{0}' already exists (pin {1})".format (name, self.names[name]))
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         if gpiolib.gpio_pin_set_name (self.handle, pn, c_char_p (bytes(name, "UTF-8"))) < 0:
             raise GpioExecutionError ("gpio_pin_set_name (pin={0}, name='{1}') failed".format (pn, name))
         # Delete old name
@@ -215,21 +284,16 @@ class GpioController:
         self.names[name] = pn
         # Update config
         self.pins[pn] = self.pins[pn]._replace (name=name)
-        return v
 
     def pin_set_flags (self, pin, flags):
         '''
         Set the flags for the pin whose ID or name is passed.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         pconf_raw = GpioConfigRaw (pin=pn, flags=flags)
         if gpiolib.gpio_pin_set_flags (self.handle, byref(pconf_raw)) < 0:
             raise GpioExecutionError ("gpio_pin_set_flags (pin={0}, flags=0x{1:08x}) failed".format (pn, flags))
         self.pins[pn] = self.pins[pn]._replace (flags=flags)
-        return v
-
-    def close (self):
-        gpiolib.close (self.handle)
 
     # Functions below this point are helper functions.
     # We provide access to them because it's simple, and because users may prefer
@@ -239,20 +303,20 @@ class GpioController:
         '''
         Set the state of this pin to low.
         '''
-        return gpiolib.gpio_set_pin_low (g.handle, self.pin_num (pin))
+        return gpiolib.gpio_set_pin_low (g.handle, self._pin_num (pin))
 
     def pin_high (self, pin):
         '''
         Set the state of this pin to high.
         '''
-        return gpiolib.gpio_set_pin_high (g.handle, self.pin_num (pin))
+        return gpiolib.gpio_set_pin_high (g.handle, self._pin_num (pin))
 
     def pin_input (self, pin):
         '''
         Configure this pin to be an input pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_input (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -262,7 +326,7 @@ class GpioController:
         Configure this pin to be an output pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_output (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -272,7 +336,7 @@ class GpioController:
         Configure this pin to be an open drain pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_opendrain (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -282,7 +346,7 @@ class GpioController:
         Configure this pin to be a push-pull pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_pushpull (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -292,7 +356,7 @@ class GpioController:
         Configure this pin to be a tristate pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_tristate (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -302,7 +366,7 @@ class GpioController:
         Configure this pin to be a pullup pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_pullup (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -312,7 +376,7 @@ class GpioController:
         Configure this pin to be an pulldown pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_pulldown (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -322,7 +386,7 @@ class GpioController:
         Configure this pin to be an inverted input pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_invin (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -332,7 +396,7 @@ class GpioController:
         Configure this pin to be an inverted output pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_invout (g.handle, pn)
         self.pin_config (pn)
         return ret
@@ -342,7 +406,7 @@ class GpioController:
         Configure this pin to be a pulsate pin. Since this changes the
         configuration, also call pin_config to update internal configuration.
         '''
-        pn = self.pin_num (pin)
+        pn = self._pin_num (pin)
         ret = gpiolib.gpio_pin_pulsate (g.handle, pn)
         self.pin_config (pn)
         return ret

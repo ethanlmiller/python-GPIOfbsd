@@ -11,6 +11,7 @@
 # BSD 3-Clause License
 #
 # Copyright (c) 2020, Ethan L. Miller
+#
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,18 +41,114 @@
 #
 
 import GPIOfbsd as g
-import sys
-from subprocess import run
+import re, sys
+import unittest
+from subprocess import run, CalledProcessError
 
+controller_name = "/dev/gpioc0"
+gpioctl_flags = {
+    'IN'     : g.GPIO_PIN_INPUT,
+    'OUT'    : g.GPIO_PIN_OUTPUT,
+    'PU'     : g.GPIO_PIN_PULLUP,
+    'PD'     : g.GPIO_PIN_PULLDOWN,
+}
 
-def test_pinlist():
-    ctrl = g.GpioController (0)
-    pin_list = ctrl.pin_list ()
-    for p in pin_list:
-        by_pin = ctrl.pin_config (p.pin)
-        by_name = ctrl.pin_config (p.name)
-        assert (p == by_pin)
-        assert (p == by_name)
+def pin_value_from_cmd (ctrl, pin):
+    result = run (['gpioctl', '-f', ctrl, str(pin)], capture_output=True, encoding="UTF-8", check=True)
+    return int(result.stdout)
+
+def make_config_from_match (m):
+    flags = 0
+    caps = 0
+    flag_list = m['flags'].split (',')
+    cap_list = m['caps'].split(',')
+    for k,v in gpioctl_flags.items():
+        if k in flag_list:
+            flags |= v
+        if k in cap_list:
+            caps |= v
+    return g.GpioConfig (pin=int(m['pin']), name=m['name'], caps=caps, flags=flags)
+
+def pin_config_from_cmd (ctrl, pin = None):
+    result = run (['gpioctl', '-f', ctrl,'-l', '-v'],
+                  capture_output=True, encoding="UTF-8", check=True)
+    configs = result.stdout.split ('\n')
+    config_pat = re.compile (r'^pin (?P<pin>\d+):\s+(?P<value>\d)\s+(?P<name>.*)\<(?P<flags>IN|OUT|PU|PD|)\>,\s*caps:\<(?P<caps>[A-Z,]+)\>')
+    if pin != None:
+        for c in configs:
+            m = config_pat.search (c)
+            if m and int(m['pin']) == pin:
+                return make_config_from_match (m)
+    else:
+        config_list = []
+        for c in configs:
+            m = config_pat.search (c)
+            if m:
+                config_list.append (make_config_from_match (m))
+        return config_list
+    return None
+
+class TestGpioControllerConfigMethods (unittest.TestCase):
+    def setUp (self):
+        self.ctrl = None
+        self.ctrl = g.GpioController (controller_name)
+        self.ctrl_name = controller_name
+    def tearDown (self):
+        if self.ctrl:
+            self.ctrl.close ()
+
+    def test_pinlist(self):
+        pin_list = self.ctrl.pin_list ()
+        for p in pin_list:
+            by_pin = self.ctrl.pin_config (p.pin)
+            by_name = self.ctrl.pin_config (p.name)
+            assert (p == by_pin)
+            assert (p == by_name)
+
+    def test_pinconfig (self):
+        for p in self.ctrl.pin_list ():
+            cnf_py = self.ctrl.pin_config (p.pin)
+            cnf_py = cnf_py._replace (caps = cnf_py.caps & ~g.GPIO_INTR_MASK)
+            cnf_un = pin_config_from_cmd (self.ctrl_name, p.pin)
+            assert cnf_py == cnf_un
+
+class TestGpioControllerPinMethods (unittest.TestCase):
+    def setUp (self):
+        self.ctrl = None
+        self.ctrl = g.GpioController (controller_name)
+        self.ctrl_name = controller_name
+    def tearDown (self):
+        if self.ctrl:
+            self.ctrl.close ()
+
+    def test_pin_get (self):
+        for p in self.ctrl.pin_list ():
+            if not (p.flags & g.GPIO_PIN_OUTPUT):
+                continue
+            v_py = self.ctrl.pin_get (p.pin)
+            v_un = pin_value_from_cmd (self.ctrl_name, p.pin)
+            assert v_py == v_un
+
+    def test_pin_set (self):
+        for p in self.ctrl.pin_list ():
+            if not (p.flags & g.GPIO_PIN_OUTPUT):
+                continue
+            orig_v = self.ctrl.pin_get (p.pin)
+            other_v = 1 - orig_v
+            self.ctrl.pin_set (p.pin, other_v)
+            assert self.ctrl.pin_get (p.pin) == other_v
+            self.ctrl.pin_set (p.name, orig_v)
+            assert self.ctrl.pin_get (p.pin) == orig_v
+
+    def test_pin_toggle (self):
+        for p in self.ctrl.pin_list ():
+            if not (p.flags & g.GPIO_PIN_OUTPUT):
+                continue
+            orig_v = self.ctrl.pin_get (p.pin)
+            self.ctrl.pin_toggle (p.pin)
+            assert self.ctrl.pin_get (p.pin) == 1 - orig_v
+            self.ctrl.pin_toggle (p.name)
+            assert self.ctrl.pin_get (p.pin) == orig_v
 
 if __name__ == '__main__':
-    pass
+    unittest.main ()

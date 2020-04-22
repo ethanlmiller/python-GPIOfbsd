@@ -221,7 +221,6 @@ class GpioController:
             self.pin_config (i)
         return self.pin_list ()
 
-
     def pin_get (self, pin):
         """
         Return the value associated with a given pin.
@@ -244,7 +243,7 @@ class GpioController:
         Toggle the value associated with a given pin.
         The pin may be specified by number or name.       
         """
-        return _gpiolib._gpio_pin_toggle (self.handle, self._pin_num (pin))
+        return _gpiolib.gpio_pin_toggle (self.handle, self._pin_num (pin))
 
     def pin_list (self):
         '''

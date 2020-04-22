@@ -40,18 +40,33 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-import GPIOfbsd as g
 import re, sys
 import unittest
-from subprocess import run, CalledProcessError
+from subprocess import run
+import GPIOfbsd as g
 
+# This must be set to the name of the GPIO controller you want to use.
+# Typically, this is /dev/gpioc0 on a Raspberry Pi.
+# The device must be readable and writable by the Python script.
 controller_name = "/dev/gpioc0"
+
+###########################################################################
+# No need to modify below here.
+###########################################################################
+
 gpioctl_flags = {
     'IN'     : g.GPIO_PIN_INPUT,
     'OUT'    : g.GPIO_PIN_OUTPUT,
     'PU'     : g.GPIO_PIN_PULLUP,
     'PD'     : g.GPIO_PIN_PULLDOWN,
 }
+
+def setUpModule ():
+    global controller
+    controller = g.GpioController (controller_name)
+
+def tearDownModule ():
+    controller.close ()
 
 def pin_value_from_cmd (ctrl, pin):
     result = run (['gpioctl', '-f', ctrl, str(pin)], capture_output=True, encoding="UTF-8", check=True)
@@ -89,66 +104,50 @@ def pin_config_from_cmd (ctrl, pin = None):
     return None
 
 class TestGpioControllerConfigMethods (unittest.TestCase):
-    def setUp (self):
-        self.ctrl = None
-        self.ctrl = g.GpioController (controller_name)
-        self.ctrl_name = controller_name
-    def tearDown (self):
-        if self.ctrl:
-            self.ctrl.close ()
-
     def test_pinlist(self):
-        pin_list = self.ctrl.pin_list ()
+        pin_list = controller.pin_list ()
         for p in pin_list:
-            by_pin = self.ctrl.pin_config (p.pin)
-            by_name = self.ctrl.pin_config (p.name)
+            by_pin = controller.pin_config (p.pin)
+            by_name = controller.pin_config (p.name)
             assert (p == by_pin)
             assert (p == by_name)
 
     def test_pinconfig (self):
-        for p in self.ctrl.pin_list ():
-            cnf_py = self.ctrl.pin_config (p.pin)
+        for p in controller.pin_list ():
+            cnf_py = controller.pin_config (p.pin)
             cnf_py = cnf_py._replace (caps = cnf_py.caps & ~g.GPIO_INTR_MASK)
-            cnf_un = pin_config_from_cmd (self.ctrl_name, p.pin)
+            cnf_un = pin_config_from_cmd (controller_name, p.pin)
             assert cnf_py == cnf_un
 
 class TestGpioControllerPinMethods (unittest.TestCase):
-    def setUp (self):
-        self.ctrl = None
-        self.ctrl = g.GpioController (controller_name)
-        self.ctrl_name = controller_name
-    def tearDown (self):
-        if self.ctrl:
-            self.ctrl.close ()
-
     def test_pin_get (self):
-        for p in self.ctrl.pin_list ():
+        for p in controller.pin_list ():
             if not (p.flags & g.GPIO_PIN_OUTPUT):
                 continue
-            v_py = self.ctrl.pin_get (p.pin)
-            v_un = pin_value_from_cmd (self.ctrl_name, p.pin)
+            v_py = controller.pin_get (p.pin)
+            v_un = pin_value_from_cmd (controller_name, p.pin)
             assert v_py == v_un
 
     def test_pin_set (self):
-        for p in self.ctrl.pin_list ():
+        for p in controller.pin_list ():
             if not (p.flags & g.GPIO_PIN_OUTPUT):
                 continue
-            orig_v = self.ctrl.pin_get (p.pin)
+            orig_v = controller.pin_get (p.pin)
             other_v = 1 - orig_v
-            self.ctrl.pin_set (p.pin, other_v)
-            assert self.ctrl.pin_get (p.pin) == other_v
-            self.ctrl.pin_set (p.name, orig_v)
-            assert self.ctrl.pin_get (p.pin) == orig_v
+            controller.pin_set (p.pin, other_v)
+            assert controller.pin_get (p.pin) == other_v
+            controller.pin_set (p.name, orig_v)
+            assert controller.pin_get (p.pin) == orig_v
 
     def test_pin_toggle (self):
-        for p in self.ctrl.pin_list ():
+        for p in controller.pin_list ():
             if not (p.flags & g.GPIO_PIN_OUTPUT):
                 continue
-            orig_v = self.ctrl.pin_get (p.pin)
-            self.ctrl.pin_toggle (p.pin)
-            assert self.ctrl.pin_get (p.pin) == 1 - orig_v
-            self.ctrl.pin_toggle (p.name)
-            assert self.ctrl.pin_get (p.pin) == orig_v
+            orig_v = controller.pin_get (p.pin)
+            controller.pin_toggle (p.pin)
+            assert controller.pin_get (p.pin) == 1 - orig_v
+            controller.pin_toggle (p.name)
+            assert controller.pin_get (p.pin) == orig_v
 
 if __name__ == '__main__':
     unittest.main ()

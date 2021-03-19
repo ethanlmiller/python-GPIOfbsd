@@ -1,7 +1,7 @@
 # Overview
 
 `python-GPIOfbsd` is a Python module that allows users to access the GPIO pins
-on a Raspberry Pi through the `libgpio` library on FreeBSD 12. Unlike some
+on a Raspberry Pi through the `libgpio` library on FreeBSD. Unlike some
 other modules, `python-GPIOfbsd` requires _no_ C compilation of any kind.
 It doesn't use `cffi`, and requires no additional downloads. This may make it
 easier to get working in the first place, and easier to maintain.
@@ -13,7 +13,7 @@ There are no requirements beyond Python 3. The module is a single Python 3
 
 ## Status
 
-The code has been tested on FreeBSD 12.1 using Python 3.7. It's pretty vanilla
+The code has been tested on FreeBSD 12.1 and FreeBSD 13.0-RC2 using Python 3.7. It's pretty vanilla
 Python, so it should work fine on any Python 3.X.
 
 The code _requires_ `libgpio`, which may only be present on certain versions
